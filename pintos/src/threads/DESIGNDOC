@@ -1,0 +1,319 @@
+			+--------------------+
+			|        CS 333      |
+			| PROJECT 1: THREADS |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+
+---- GROUP ----
+
+Name                            ID            E-mail
+Shady Abd Elaziz                28            shady0x7CB@gmail.com
+
+Omar Khaled                     42            omar.khaled2400@gmail.com
+ 
+Mahmoud Abdel Latif             64            mahmoudabdellatif830@gmail.com
+
+ 			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+A1:
+1 – struct list sleep_list : it contains all sleep threads waiting the time to wake up.
+2 – int wake_up_time : the wake up time specified for each thread.
+
+---- ALGORITHMS ----
+
+A2:
+when a thread is to sleep it invokes timer_sleep function which take the time to sleep as a parameter sos first we take this time and add it to the starting time and set the wake_up_time for this thread to this addition.
+Then we disabled the interrupt (to avoid races)to put the thread in the sleep list with respect to wake_up_time such the thread of nearest wake_up_time is to be the first if two thread have the same wake_up_time the thread of higher priority if to be the first.
+Timer interrupt called once each tick it will handle waking up the right thread in the correct time making it in the ready list erasing it from the blocked threads and make its status ready.
+A3:
+in order to minimize time for timer interrupt we insert the thread in sleep list in order according to priorities such than the first element is the highest chance(lowest wake_up _time )
+so when we are to waken a thread we only check the first one if the time is up then remove it else break;
+
+---- SYNCHRONIZATION ----
+
+A4, A5:
+Disabling the interrupts in the timer sleep as inserting multiple threads blocked in the list could’t lead to synchronization errors and re-enabling it after finishing also this handles the timer interrupt if tried to access the list through the insertion process.
+
+---- RATIONALE ----
+
+A6:
+all data structures used is simple (ex:List, Integer), also  maintaining the sorting(list_insert_ordered) and using the list and simple variable to indicate the timing for waking up the thread .
+Also we insert the thread in sleep list in order according to priorities such than the first element is the highest chance(lowest wake_up _time )
+so when we are to waken a thread we only check the first one if the time is up then remove it else break. 
+So we save time instead of use insert and then check all the list for wake_up_time.
+
+			 PRIORITY SCHEDULING
+			 ===================
+
+---- DATA STRUCTURES ----
+
+B1:
+1 – struct thread locker : each thread has a locker thread which is the thread holding the lock the first thread is accessing this thread will be null if the thread is first accessing the lock.
+2 - struct list donors : each thread has a list called donors which contains all threads that donor their priorities to the thread.
+3 - struct list_elem donor_elem : it’s the list element for the thread to donate.
+4 - struct lock *blocked : it’s the lock at which the thread is blocked.
+5 - int base_priority it’s the base priority for the thread.
+
+B2:
+Each thread has a locker thread (the locker thread is the thread holding the lock)
+here thead x run first then y of higher priority
+each thread has list of donors which contains the threads that donate to it
+these used to keep track of priority donation
+
+consider example (nested donation)
+threadX run first then Y then Z
+threadX, 	threadY         threadZ
+|**L**|   	|**M**|         |**H**|
+|locka|  	|lockb|         |     |
+|     | 	|locka|         |lockb|
+|     | 	|     |         |     |
+|     | 	|     |         |     |
+|*****| 	|*****|         |*****|
+when threadX acquire locka semaA becomes 0
+locka→holder = threadX
+threadX→locker = Null;
+
+when threadY acquire lockb semaB becomes 0
+lockb→holder = threadY
+threadY→locker = Null;
+
+when threadY acquire locka 
+threadY→locker = threadX;
+so threadX→donor.push(Y.donor_elem) --→ |*********** |           |***********|
+                                         |Y.donor_elem|--→..     |           |                                                             					         |*********** |	          |***********|
+threadY→blocked = locka
+then threadX→priority = threadY->priority
+locka.waiters  = [y]
+threadY blocked
+
+
+threadZ -→locker = threadY;
+so threadY→donor.push(Z.donor_elem) --→ |***********|           |***********|
+                                         |Z.donor_elem|--->..    |           |                                                                     					         |***********|	         |***********|
+
+threadZ→blocked = lockb
+then threadY→priority = threadZ->priority
+threadX → priority = threadY → priority (threadx → priority = threadZ → priority)
+lackb.waiters = [z]
+threadZ blocked
+
+when Xrelease the locka it unblocks Y
+and X.donor.remove Y
+Y.blocked = null
+
+then Y release lockb and unblocks Z
+and Y.donors.remove Z
+z.blocked = null
+
+then Z contimues
+
+---- ALGORITHMS ----
+
+B3:
+we ensure that the highest priority thread waiting for a lock, semaphore, or condition variable wakes up first by sorting the list of waiters with respect to the priorities so that the element with highest priority is at the front
+
+B4:
+when a call to lock_acquire() occur the following happens:
+we check if the lock has a holder or not:
+1 – if it has a holder:
+the holder becomes the locker of the thread acquiring the lock
+then the current thread donor_elem is pushed to lock-holder donor list
+the current thread-blocked is set to the lock to be acquired
+then while thread has a locker it donate it’s priority to it
+2 – if no holder no donation occur
+then sema_down is invocked
+lock_holder is updated
+
+
+consider example (nested donation)
+threadX run first then Y then Z
+threadX, 	threadY        threadZ
+|**L**|   	|**M**|        |**H**|
+|locka|  	|lockb|        |     |
+|     | 	|locka|        |lockb|
+|     | 	|     |        |     |
+|     | 	|     |        |     |
+|*****| 	|*****|        |*****|
+when threadX acquire locka semaA becomes 0
+locka→holder = threadX
+threadX→locker = Null;
+
+when threadY acquire lockb semaB becomes 0
+lockb→holder = threadY
+threadY→locker = Null;
+
+when threadY acquire locka 
+threadY→locker = threadX;
+so threadX→donor.push(Y.donor_elem) --→ |*********** |           |***********|
+                                         |Y.donor_elem|--→..     |           |                                         					 |*********** |	          |***********|
+threadY→blocked = locka
+then threadX→priority = threadY->priority
+locka.waiters  = [y]
+threadY blocked
+
+
+
+threadZ -→locker = threadY;
+so threadY→donor.push(Z.donor_elem) --→ |***********|           |***********|
+                                         |Z.donor_elem|--->..    |           |                                                                     					         |***********|	         |***********|
+
+threadZ→blocked = lockb
+then threadY→priority = threadZ->priority
+threadX → priority = threadY → priority (threadx → priority = threadZ → priority)
+lackb.waiters = [z]
+threadZ blocked
+
+when Xrelease the locka it unblocks Y
+and X.donor.remove Y
+Y.blocked = null
+Xpriority = X.basePriority
+
+then Y release lockb and unblocks Z
+and Y.donors.remove Z
+z.blocked = null
+Ypriority = y.basePriority
+then Z contimues
+	
+
+B5:
+when a call to lock_release() occur the following happens:
+we update lock holder to be = null
+then invoke sema up() which unblock the higher priority thread from the waiter list
+then if there is no donors for that thread update priority to it’s base priority
+if there exist donors:
+we seach for all thread blocked at the lock from the donors list and remove them
+then we check if there are another locks acquired by the thread if true:
+we get the max_donor_thread
+and donate the priority of the max_donor_thread to the current thread only if it’s higher priority else we set the current thread priority to it’s base priority
+
+---- Synchronization ----
+
+B6:
+the thread may be interrupted while changing it’s priority which may lead to race so we disable interrupts to avoid races
+we can use lock to avoid this race
+
+---- Rationale ----
+
+B7:
+our design is good as we keep a locker thread which holds the lock that the thread is acquiring
+and also we keep a list for donor threads and also a lock at which the thread is blocked all these data types make it easy to handle donation will all it’s types, I think this design has no pitfalls.
+The dis advantage is disabling interrupts a lot to avoid races
+
+			  ADVANCED SCHEDULER
+			  ==================
+
+---- data-structures ----
+
+C1:
+1 - int nice was added to thread.h so that we can indicate the thread niceness
+determines how "nice" the thread should be to other threads. A nice of zero does not affect thread priority. A positive nice, to the maximum of 20, decreases the priority of a thread and causes it to give up some CPU time it would otherwise receive. On the other hand, a negative nice, to the minimum of -20, tends to take away CPU time from other threads..
+
+2 - Int recent_cpu in thread.c to indicate the time spent by the thread on the CPU.
+measure how much CPU time each process has received "recently." Furthermore, as a refinement, more recent CPU time should be weighted more heavily than less recent CPU time
+3 - Int load_avg this element was added at  thread.c. estimates the average number of threads ready to run over the past minute.
+
+----Algorithms ----
+
+C2:
+priority = PRI_MAX - (recent_cpu / 4) - (nice * 2). 
+recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice. 
+load_avg = (59/60)*load_avg + (1/60)*ready_threads. 
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0     0   1   2   63  61  59     A   
+ 4     4   1   2   62  61  59     A   
+ 8     7   2   4   61  61  58     B   
+12     6   6   6   61  59  58     A   
+16     9   6   7   60  59  57     A   
+20     12  6   8   60  59  57     A   
+24     15  6   9   59  59  57     B   
+28     14  10  10  59  58  57     A   
+32     16  14  11  58  58  56     B   
+36     15  14  12  59  57  56     A   
+
+C3:
+recent_cpu here is ambiguous here. When we calculate recent_cpu, we did not 
+consider the time that CPU spends on the calculations every 4 ticks, like 
+load_avg, recent_cpu for all threads, priority for all threads in all_list, 
+resort the ready_list. When CPU does these calculations, the current thread needs 
+to yield, and not running. Thus, every 4 ticks, the real ticks that is added to 
+recent_cpu (recent_cpu is added 1 every ticks) is not really 4 ticks -- less than 
+4 ticks. But we could not figure out how much time it spends. What we did was 
+adding 4 ticks to recent_cpu every 4 ticks.
+Our implementation of BSD scheduler is the same as this. We just count the ticks 
+since system boots, and does all the above calculations every 4 ticks
+C4:
+If the CPU spends too much time on calculations for recent_cpu, load_avg and 
+priority, then it takes away most of the time that a thread before enforced 
+preemption. Then this thread can not get enough running time as expected and it 
+will run longer. This will cause itself got blamed for occupying more CPU time, 
+and raise its load_avg, recent_cpu, and therefore lower its priority. This may 
+disturb the scheduling decisions making. Thus, if the cost of scheduling inside 
+the interrupt context goes up, it will lower performance.
+
+---- Rationale ----
+
+C5: 
+I think the advantages is the simplicity of the code which we used in the design and the
+complexity.
+Disadvantages:
+we didnot used more efficeint data structures in the project due to the date of the delivery as binary trees to maintain the sorting.
+Suggestions: detecting overflows in the fixed point operations and using the locks instead of
+turning off the interrupts.
+A: Our design did not apply the 64 queues. We used only one queue -- the 
+ready_list that Pintos originally have. But as the same as what we did for the 
+task 2, we keep the ready_list as an priority oriented descending order at the 
+every beginning -- that is, whenever we insert a thread into the ready_list, we 
+insert it in order. The time complexity is O(n).
+ If we use 64 queues 
+for the ready threads, we can put the 64 queues in an array with index equaling to
+its priority value. When the thread is first inserted, it only need to index the 
+queue by this thread’s priority. This will take only O(1) time. 
+
+C6:
+ As mentioned in the BSD scheduling manual, recent_cpu and load_avg are real 
+numbers, but pintos disabled float numbers. Instead using float number, we can 
+use fixed-point numbers. So we use fixed-point numbers to represent recent_cpu 
+and load_avg.
+We used simple functions in the new created header fixed-point-real-arithmetic.h .
+ We implement them as functions because
+1. They are simple .
+2. They are  readable .
+3. relatively fast
+
+			   SURVEY QUESTIONS
+			   ================
+
+In your opinion, was this assignment, or any one of the three problems
+in it, too easy or too hard?  Did it take too long or too little time?
+A:
+ I think the first and third requirement are a bit more easier than the second one
+the second one takes a long time in logical thinking and implementation and debugging
+
+Did you find that working on a particular part of the assignment gave
+you greater insight into some aspect of OS design?
+
+A:
+yes, we have taken a good experience and a greater insight 
+into some aspects of OS designed
+
+Is there some particular fact or hint we should give students in
+future quarters to help them solve the problems?  Conversely, did you
+find any of our guidance to be misleading?
+
+A:
+No, but I think it will better if you give a hint for second requirement
+
+Do you have any suggestions for the TAs to more effectively assist
+students, either for future quarters or the remaining projects?
+
+A:
+No, only giving hint for solution will be good
+
+
+ 
